@@ -28,48 +28,75 @@ motor = servo.ContinuousServo(pwm)
 usr_button = touchio.TouchIn(board.D3)
 startstop_button = touchio.TouchIn(board.D4)
 
+# Parameters
+
+neutral_value = 32800
+start_threshold = 9000
+stop_threshold = 3000
+speed = 0.05
+button_delay = 0.5
+
+
 # Variables
 
-running = False
-proportional = True
-button_delay = 0.3
-neutral_value = sensor.value
-threshold = 5000
-gain = 1e-5   # Used in proportional mode only
-speed = 0.04  # Used in non-proportional model only
+moving = False
+
+
+def detect_press():
+    # Return whether one or both buttons are pressed.
+    ss_pressed = startstop_button.value
+    us_pressed = usr_button.value
+    if ss_pressed or us_pressed:
+        time.sleep(0.05)
+        if startstop_button.value and usr_button.value:
+            return "B"
+        elif ss_pressed:
+            return "S"
+        elif us_pressed:
+            return "U"
+
+
+# Initial state
+
+state = "running"
+motor.throttle = 0
+pixel[0] = (0, 255, 0)  # Set pixel Green
 
 # Loop
 
-pixel[0] = (255,0,0) # Set pixel red
-
 while True:
-    if running:
-        if startstop_button.value: # Stop running
-            running = False
+    button_state = detect_press()
+    value = sensor.value
+    print("State:{} Sensor value: {} Moving: {}".format(state, value, moving))
+
+    if state == "running":
+        if button_state == "S":  # Stop running
+            state = "stopped"
+            moving = False
             motor.throttle = 0
-            pixel[0] = (255,0,0) # Set pixel red
+            pixel[0] = (255, 0, 0)  # Set pixel red
             time.sleep(button_delay)
-        else: # Control motor
-            value = sensor.value
-            diff = value-neutral_value
-            if abs(diff) > threshold:
-                if proportional:
-                    motor.throttle = diff*gain
-                else:
-                    motor.throttle = copysign(speed, diff)
+        else:  # Control motor
+            diff = value - neutral_value
+            if not moving and (abs(diff) > start_threshold) or moving and (abs(diff) > stop_threshold):
+                moving = True
+                motor.throttle = copysign(speed, diff)
+                pixel[0] = (0, 0, 255)  # Set pixel blue
             else:
                 motor.throttle = 0
-            time.sleep(0.01)
-    else: # Not running.
-        if startstop_button.value: # start running
-            running = True
-            pixel[0] = (0,255,0) # Set pixel green
+                moving = False
+                pixel[0] = (0, 255, 0)  # Set pixel green
+            time.sleep(0.1)
+    elif state == "stopped":  # Not running.
+        if button_state == "S":  # start running
+            state = "running"
+            pixel[0] = (0, 255, 0)  # Set pixel green
             time.sleep(button_delay)
-        elif usr_button.value: # Reset neutral position.
-            pixel[0] = (0,0,255) # Set pixel blue
+        elif button_state == "U":  # Reset neutral position.
+            pixel[0] = (0, 0, 255)  # Set pixel blue
             neutral_value = sensor.value
             print(neutral_value)
             time.sleep(button_delay)
-            pixel[0] = (255,0,0) # Set pixel red 
-
-
+            pixel[0] = (255, 0, 0)  # Set pixel red
+        else:
+            time.sleep(0.1)
